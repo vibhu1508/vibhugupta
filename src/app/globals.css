@@ -1,0 +1,695 @@
+@import "tailwindcss";
+
+/* ============================================================
+   SIGNAL — Iron Man HUD
+   ============================================================ */
+
+@theme {
+  --color-ground:      #05060a;
+  --color-ground-lift: #0b0e15;
+  --color-ground-card: #10141d;
+  --color-hairline:    #1c2231;
+  --color-hairline-hi: #2c3547;
+
+  --color-ink:         #eef1f7;
+  --color-ink-soft:    #939eb4;
+  --color-ink-faint:   #5a647a;
+
+  --color-signal:      #ff3d14;
+  --color-signal-warm: #ffd0c0;
+  --color-signal-dim:  #7a2410;
+
+  --color-human:       #3b82f6;
+  --color-human-soft:  #cfe2ff;
+
+  /* next/font injects the family names into these *-src variables. */
+  --font-display: var(--font-display-src), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-sans-src), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-src), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --ease-resolve: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --nav-h: 64px;
+  /* Fallback only — AskDock overwrites this with its measured height
+     on mount and on every resize. */
+  --dock-h: 132px;
+}
+
+:root { color-scheme: dark; }
+
+html {
+  background: var(--color-ground);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  /* Anchored sections must clear the fixed nav. */
+  scroll-padding-top: calc(var(--nav-h) + 24px);
+}
+
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  /* Content never runs under the docked ask bar. */
+  padding-bottom: var(--dock-h);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::selection { background: var(--color-signal); color: #fff; }
+
+/* ── Sphere ───────────────────────────────────────────────────
+   A true background: fixed, behind everything, never in flow.
+   transform-origin MUST stay centred — SphereLayer positions the
+   box by its top-left but scales it about its middle. */
+.sphere-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform, opacity;
+  animation: sphere-arrive 1600ms var(--ease-resolve) both;
+}
+.sphere-layer__canvas, .pxs { width: 100%; height: 100%; }
+
+/* Dissolve the canvas edge.
+   The sphere fills roughly 60% of the box's half-width, so the mask stays
+   fully opaque well past it and is gone before the boundary. This is what
+   removes the visible rectangle — it works regardless of what the bloom
+   pass writes into the corners, which is why it beats trying to match the
+   page colour. `closest-side` makes the stops predictable: the ray is half
+   the box, not the diagonal. */
+.pxs canvas {
+  -webkit-mask-image: radial-gradient(circle closest-side, #000 64%, rgba(0,0,0,0.55) 80%, transparent 96%);
+  mask-image: radial-gradient(circle closest-side, #000 64%, rgba(0,0,0,0.55) 80%, transparent 96%);
+}
+@keyframes sphere-arrive { from { opacity: 0; } to { opacity: 1; } }
+
+/* Contrast pad behind the hero type only — tight and soft, so the sphere
+   stays clearly visible around and through it instead of being blacked out. */
+.scrim {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(120vw, 1100px);
+  height: min(70vh, 560px);
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(5,6,10,0.62) 0%, rgba(5,6,10,0.34) 45%, transparent 72%);
+  transition: opacity 700ms var(--ease-resolve);
+}
+/* Once the visitor is talking, the type is gone and the sphere owns the frame. */
+.hero[data-talking="true"] .scrim { opacity: 0; }
+
+/* Fades the sphere back as you scroll into content. Between the sphere
+   (z 0) and the content (z 10), so type is never dimmed. */
+.sphere-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--color-ground);
+  opacity: 0;
+  will-change: opacity;
+}
+
+.vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(5,6,10,0.9) 100%);
+}
+
+/* ── Type ─────────────────────────────────────────────────── */
+.machine {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+}
+.display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+}
+.section-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+  line-height: 1.05;
+}
+
+/* The hero's bottom row has to clear the fixed dock. The hero is a full
+   100svh tall, so body padding does nothing for it — the clearance has to
+   live here. */
+.hero-bottom { padding-bottom: calc(var(--dock-h) + 2rem); }
+
+/* ── Nav ──────────────────────────────────────────────────── */
+.nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-h);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
+  background: rgba(5, 6, 10, 0.72);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 300ms ease, background 300ms ease;
+}
+.nav[data-scrolled="true"] { border-bottom-color: var(--color-hairline); }
+
+.nav-link {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  padding: 6px 2px;
+  transition: color 220ms ease;
+}
+.nav-link:hover { color: var(--color-ink); }
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--color-signal);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 320ms var(--ease-resolve);
+}
+.nav-link:hover::after,
+.nav-link[data-active="true"]::after { transform: scaleX(1); }
+.nav-link[data-active="true"] { color: var(--color-ink); }
+
+/* ── Contribution grid ────────────────────────────────────── */
+.gh-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--color-ground-lift);
+  border: 1px solid #ffffff08;
+  flex-shrink: 0;
+}
+/* Ember ramp rather than GitHub's green — it has to belong to this palette. */
+.gh-cell[data-level="1"] { background: #4a1a0d; border-color: #ffffff10; }
+.gh-cell[data-level="2"] { background: #8a2c10; border-color: #ffffff12; }
+.gh-cell[data-level="3"] { background: #cc3a13; border-color: #ffffff14; }
+.gh-cell[data-level="4"] { background: var(--color-signal); border-color: #ffffff20; }
+
+/* ── Mobile menu ──────────────────────────────────────────── */
+.menu-btn {
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  width: 44px;   /* 44px is the minimum comfortable touch target */
+  height: 44px;
+  margin-right: -10px;
+  cursor: pointer;
+}
+.menu-btn span {
+  display: block;
+  width: 20px;
+  height: 1.5px;
+  background: var(--color-ink);
+  transition: transform 320ms var(--ease-resolve), opacity 220ms ease;
+}
+.menu-btn span[data-open="true"]:first-child { transform: translateY(3.25px) rotate(45deg); }
+.menu-btn span[data-open="true"]:last-child { transform: translateY(-3.25px) rotate(-45deg); }
+
+.mobile-menu {
+  position: fixed;
+  top: var(--nav-h);
+  left: 0;
+  right: 0;
+  z-index: 59;
+  padding: 1.5rem clamp(1rem, 4vw, 2.5rem) 2rem;
+  background: rgba(5, 6, 10, 0.97);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--color-hairline);
+  transform: translateY(-8px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 260ms ease, transform 320ms var(--ease-resolve), visibility 0s linear 320ms;
+}
+.mobile-menu[data-open="true"] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.mobile-menu ul { display: flex; flex-direction: column; }
+.mobile-menu li { border-bottom: 1px solid var(--color-hairline); }
+.mobile-menu li:last-child { border-bottom: 0; }
+.mobile-menu a {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  /* Generous row height: these are thumb targets, not mouse targets. */
+  padding: 1rem 0;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-ink-soft);
+  transition: color 200ms ease;
+}
+.mobile-menu a[data-active="true"] { color: var(--color-ink); }
+.mobile-menu a:active { color: var(--color-signal); }
+
+/* Scroll progress — sits on the nav's bottom edge. */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-signal-dim), var(--color-signal));
+  z-index: 61;
+  transform-origin: left;
+  will-change: transform;
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--color-hairline-hi);
+  background: var(--color-ground-lift);
+  color: var(--color-ink);
+  padding: 0.7rem 1.3rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 220ms ease, background 220ms ease, transform 220ms var(--ease-resolve), box-shadow 220ms ease;
+}
+.btn:hover {
+  border-color: var(--color-signal);
+  background: var(--color-ground-card);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px -10px rgba(255, 61, 20, 0.6);
+}
+.btn:active { transform: translateY(0); }
+.btn--primary { border-color: var(--color-signal-dim); background: rgba(255, 61, 20, 0.09); }
+.btn--primary:hover { background: rgba(255, 61, 20, 0.16); }
+
+/* ── Cards ────────────────────────────────────────────────── */
+.card-surface {
+  border: 1px solid var(--color-hairline);
+  background: color-mix(in srgb, var(--color-ground-card) 78%, transparent);
+  backdrop-filter: blur(10px);
+  border-radius: 10px;
+  transition: border-color 280ms ease, background 280ms ease, transform 280ms var(--ease-resolve);
+}
+.card-surface:hover {
+  border-color: var(--color-hairline-hi);
+  transform: translateY(-2px);
+}
+.card-surface--interactive { cursor: pointer; }
+.card-surface--interactive:hover { border-color: var(--color-signal-dim); }
+.card-surface[data-active="true"] {
+  border-color: var(--color-signal);
+  background: color-mix(in srgb, var(--color-ground-card) 92%, transparent);
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: 0.5938rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  border: 1px solid var(--color-hairline);
+  border-radius: 3px;
+  padding: 3px 7px;
+  transition: border-color 200ms ease, color 200ms ease;
+}
+.chip:hover { border-color: var(--color-signal-dim); color: var(--color-ink); }
+
+/* ── Brand marks & imagery ────────────────────────────────── */
+.logo-img {
+  object-fit: contain;
+  border-radius: 9px;
+  /* A real light plate, not a 4%-alpha hint.
+     Most company marks ship as dark artwork on an opaque WHITE canvas
+     (measured: luminance ~230/255, 0% transparent). Against a near-black
+     page those became tiny white squares with illegible dark specks inside.
+     An explicit light backing makes the white intentional and the mark
+     readable, and transparent-background marks sit on it fine too. */
+  background: linear-gradient(160deg, #ffffff, #e6eaf2);
+  padding: 5px;
+  box-shadow:
+    0 0 0 1px #ffffff1f,
+    0 3px 12px -4px #000000cc;
+  transition: transform 320ms var(--ease-resolve), box-shadow 320ms ease;
+}
+
+/* Monogram: the fallback when no file exists (TeamLease, SMLRA, the
+   institutions). It shares the plate's exact footprint so a row of marks
+   stays aligned whether or not the artwork is there — and it is styled to
+   look chosen rather than missing. */
+.logo-fallback {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(160deg, var(--color-ground-card), var(--color-ground-lift));
+  box-shadow:
+    inset 0 0 0 1px var(--color-hairline-hi),
+    0 3px 12px -6px #000000cc;
+  color: var(--color-signal-warm);
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  transition: transform 320ms var(--ease-resolve), box-shadow 320ms ease, color 320ms ease;
+}
+
+/* The mark reacts with its card, so it reads as part of one object. */
+.card-surface:hover .logo-img,
+.card-surface:hover .logo-fallback {
+  transform: translateY(-2px) scale(1.04);
+}
+.card-surface:hover .logo-img { box-shadow: 0 0 0 1px #ffffff33, 0 8px 20px -6px #000; }
+.card-surface:hover .logo-fallback {
+  color: var(--color-signal);
+  box-shadow: inset 0 0 0 1px var(--color-signal-dim), 0 8px 20px -8px #000;
+}
+
+.portrait {
+  object-fit: cover;
+  border-radius: 50%;
+  border: 1px solid var(--color-hairline-hi);
+}
+/* Photos sit in a fixed 4:3 frame so a mixed bag of portrait and landscape
+   shots still forms a tidy row — object-cover crops rather than letterboxing. */
+.photo-frame {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-ground-lift);
+}
+
+.shot {
+  border: 1px solid var(--color-hairline);
+  border-radius: 8px;
+  object-fit: cover;
+  width: 100%;
+  height: 100%;
+}
+
+/* Tech chips carry a small mark alongside the label. */
+.chip--logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+}
+
+/* Hard clamp on the mark, independent of what the icon component does with
+   its own props. Without this a single icon that ignores `size` blows the
+   whole row apart. */
+.tech-mark {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.tech-mark > svg {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* ── Timeline (work experience) ───────────────────────────── */
+.timeline { position: relative; }
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--color-hairline);
+}
+/* Fill grows with scroll — driven by a CSS var from JS. */
+.timeline::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  width: 1px;
+  height: calc(var(--fill, 0) * 100%);
+  max-height: calc(100% - 12px);
+  background: linear-gradient(180deg, var(--color-signal), var(--color-signal-dim));
+  transition: height 180ms linear;
+}
+.timeline-dot {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--color-hairline-hi);
+  background: var(--color-ground);
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+}
+.timeline-item[data-seen="true"] .timeline-dot {
+  border-color: var(--color-signal);
+  box-shadow: 0 0 0 3px rgba(255, 61, 20, 0.14);
+}
+
+/* ── Mic orb ──────────────────────────────────────────────── */
+.orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 108px;
+  height: 108px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+.orb__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-signal-dim);
+  transition: transform 700ms var(--ease-resolve), border-color 400ms ease, opacity 400ms ease;
+}
+.orb__ring--mid { inset: 12px; opacity: 0.75; }
+.orb__ring--inner { inset: 24px; opacity: 0.5; }
+.orb:hover .orb__ring { transform: scale(1.1); border-color: var(--color-signal); }
+.orb:hover .orb__ring--mid { transform: scale(1.18); }
+.orb:hover .orb__ring--inner { transform: scale(1.26); }
+
+.orb__ticks {
+  position: absolute;
+  inset: -9px;
+  animation: spin 24s linear infinite;
+  transition: opacity 400ms ease;
+  opacity: 0.4;
+}
+.orb:hover .orb__ticks { animation-duration: 7s; opacity: 1; }
+
+.orb__core {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, var(--color-signal-warm), var(--color-signal) 62%, transparent 76%);
+  box-shadow: 0 0 20px 2px rgba(255, 61, 20, 0.45);
+  transition: transform 500ms var(--ease-resolve), box-shadow 500ms ease;
+}
+.orb:hover .orb__core { transform: scale(1.14); box-shadow: 0 0 40px 6px rgba(255, 61, 20, 0.65); }
+.orb[data-live="true"] .orb__core { animation: pulse 1.5s ease-in-out infinite; }
+.orb[data-live="true"] .orb__ticks { animation-duration: 4s; opacity: 1; }
+.orb[data-live="true"] .orb__ring { border-color: var(--color-human); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 20px 2px rgba(255, 61, 20, 0.45); }
+  50% { transform: scale(1.12); box-shadow: 0 0 44px 8px rgba(255, 61, 20, 0.7); }
+}
+
+/* ── Ask dock ─────────────────────────────────────────────── */
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 55;
+  padding: 0.75rem clamp(1rem, 4vw, 2rem) 1rem;
+  background: linear-gradient(180deg, transparent, rgba(5, 6, 10, 0.9) 38%);
+  pointer-events: none;
+}
+.dock > * { pointer-events: auto; }
+
+.dock-field {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--color-hairline-hi);
+  background: rgba(11, 14, 21, 0.92);
+  backdrop-filter: blur(16px);
+  border-radius: 999px;
+  padding: 0.55rem 0.6rem 0.55rem 1.25rem;
+  transition: border-color 240ms ease, box-shadow 240ms ease;
+}
+.dock-field:focus-within {
+  border-color: var(--color-signal-dim);
+  box-shadow: 0 0 0 3px rgba(255, 61, 20, 0.09);
+}
+
+.suggest-chip {
+  border: 1px solid var(--color-hairline);
+  background: rgba(11, 14, 21, 0.9);
+  backdrop-filter: blur(10px);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.75rem;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 200ms ease, color 200ms ease, transform 200ms var(--ease-resolve);
+}
+.suggest-chip:hover {
+  border-color: var(--color-signal-dim);
+  color: var(--color-ink);
+  transform: translateY(-1px);
+}
+
+/* Horizontal scrollers fade at whichever edge still has content behind it,
+   so a clipped chip reads as "more this way" rather than a broken layout. */
+.rail {
+  --fade-l: 0px;
+  --fade-r: 0px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%);
+  transition: --fade-l 200ms linear, --fade-r 200ms linear;
+}
+.rail[data-at-start="false"] { --fade-l: 42px; }
+.rail[data-at-end="false"] { --fade-r: 42px; }
+
+/* Hide the scrollbar on the suggestion rail without losing the scroll. */
+.no-bar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-bar::-webkit-scrollbar { display: none; }
+
+/* ── Reveal on scroll ─────────────────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  filter: blur(4px);
+  transition: opacity 780ms var(--ease-resolve), transform 780ms var(--ease-resolve), filter 780ms var(--ease-resolve);
+  transition-delay: var(--d, 0ms);
+}
+.reveal[data-seen="true"] { opacity: 1; transform: none; filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; filter: none; transition: none; }
+  .orb__ticks, .orb__core { animation: none !important; }
+  .card-surface:hover, .btn:hover { transform: none; }
+}
+
+/* ── Corner brackets ──────────────────────────────────────── */
+.bracket {
+  position: fixed;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-signal-dim);
+  pointer-events: none;
+  z-index: 58;
+  opacity: 0.55;
+}
+.bracket--tl { top: calc(var(--nav-h) + 12px); left: 14px; border-right: 0; border-bottom: 0; }
+.bracket--tr { top: calc(var(--nav-h) + 12px); right: 14px; border-left: 0; border-bottom: 0; }
+.bracket--bl { bottom: calc(var(--dock-h) + 8px); left: 14px; border-right: 0; border-top: 0; }
+.bracket--br { bottom: calc(var(--dock-h) + 8px); right: 14px; border-left: 0; border-top: 0; }
+@media (max-width: 640px) { .bracket { display: none; } }
+
+/* ── Name shatter ─────────────────────────────────────────────
+   Each glyph gets its own trajectory from a deterministic seed, so
+   the server and client render identical markup (Math.random() here
+   would cause a hydration mismatch). */
+.shatter-char {
+  display: inline-block;
+  white-space: pre;
+  will-change: transform, opacity, filter;
+}
+.hero[data-talking="true"] .shatter-char {
+  animation: shatter 900ms cubic-bezier(0.4, 0, 0.7, 0.2) both;
+  animation-delay: calc(var(--i) * 22ms);
+}
+@keyframes shatter {
+  0%   { transform: none; opacity: 1; filter: blur(0); }
+  18%  { transform: translate(calc(var(--dx) * -0.06em), calc(var(--dy) * -0.06em)) rotate(calc(var(--r) * -0.15deg)); opacity: 1; }
+  100% {
+    transform: translate(calc(var(--dx) * 1em), calc(var(--dy) * 1em)) rotate(calc(var(--r) * 1deg)) scale(0.7);
+    opacity: 0;
+    filter: blur(7px);
+  }
+}
+
+/* Coming back: the exact inverse of the shatter, so the glyphs fly home
+   along the paths they left on. Slightly faster and tighter-staggered —
+   a return that takes as long as the exit reads as sluggish. */
+.hero[data-returning="true"] .shatter-char {
+  animation: reassemble 820ms var(--ease-resolve) both;
+  animation-delay: calc(var(--i) * 16ms);
+}
+@keyframes reassemble {
+  0% {
+    transform: translate(calc(var(--dx) * 1em), calc(var(--dy) * 1em)) rotate(calc(var(--r) * 1deg)) scale(0.7);
+    opacity: 0;
+    filter: blur(7px);
+  }
+  100% { transform: none; opacity: 1; filter: blur(0); }
+}
+
+/* Negative tracking also applies after the LAST glyph, so the text box is
+   narrower than the glyph run and centring pushes it visibly right. The
+   compensation puts the run back on the true centre line. */
+.name-line { margin-right: -0.035em; }
+
+/* The rest of the hero copy clears out with it. */
+.hero[data-talking="true"] .hero-fade {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+  transition: opacity 450ms ease, transform 600ms var(--ease-resolve);
+}
+.hero-fade { transition: opacity 450ms ease 300ms, transform 600ms var(--ease-resolve) 300ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero[data-talking="true"] .shatter-char { animation: none; opacity: 0; }
+  .hero[data-returning="true"] .shatter-char { animation: none; opacity: 1; }
+}

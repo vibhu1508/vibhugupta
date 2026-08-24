@@ -1,0 +1,36 @@
+{
+  "name": "portfolio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "logos": "node scripts/logo-manifest.mjs",
+    "predev": "node scripts/logo-manifest.mjs",
+    "prebuild": "node scripts/logo-manifest.mjs",
+    "voice:export": "tsx scripts/voice/export-lines.ts"
+  },
+  "dependencies": {
+    "developer-icons": "^7.1.0",
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.185.4",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.23",
+    "tailwindcss": "^4.1.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.7.0"
+  }
+}
